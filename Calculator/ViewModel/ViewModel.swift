@@ -1,12 +1,16 @@
 import Foundation
 import UIKit
+import FirebaseFirestore
 
 class ViewModel: ObservableObject {
     @Published var isClicked: Bool = false
     @Published var value: String = "0"
     @Published var number: Double = 0.0
     @Published var currentOperation: Operation = .none
-    @Published var isResultDisplayed: Bool = false // ✅ Флаг для сброса ввода после "="
+    @Published var isResultDisplayed: Bool = false
+    
+    @Published var operationString: String = ""
+    private let historyViewModel = HistoryViewModel()
     
     let buttonsArray: [[Buttons]] = [
         [.sin, .cos, .tg, .ctg],
@@ -16,6 +20,7 @@ class ViewModel: ObservableObject {
         [.one, .two, .three, .plus],
         [.zero, .sqrt, .decimal, .equal]
     ]
+    
     
     func buttonWidth(item: Buttons) -> CGFloat {
         let spacing: CGFloat = 12
@@ -31,41 +36,63 @@ class ViewModel: ObservableObject {
     }
     
     func didTap(item: Buttons) {
-        
         switch item {
         case .plus, .minus, .multiple, .divide:
             number = Double(value) ?? 0
             currentOperation = operationForButton(item)
+            // Формируем строку операции без результата
+            operationString = "\(formatResult(number)) \(item.rawValue) "
             value = "0"
+            
         case .equal:
             if let currentValue = Double(value) {
                 let result = performOperation(currentValue)
+                // Добавляем второе число к строке операции
+                let fullOperation = operationString + formatResult(currentValue)
                 value = result
+                // Записываем в историю: операция без "= результат"
+                historyViewModel.addData(operation: fullOperation, result: result)
                 resetOperation()
-                isResultDisplayed = true // ✅ Помечаем, что показан результат
+                isResultDisplayed = true
             }
+            
         case .decimal:
             if !value.contains(".") {
                 value += "."
             }
+            
         case .percent:
             if let currentValue = Double(value) {
                 value = formatResult(currentValue / 100)
+                operationString = "\(formatResult(currentValue))%"
+                historyViewModel.addData(operation: operationString, result: value)
             }
+            
         case .negative:
-            if let currentValue = Double(value) {
-                value = formatResult(-currentValue)
+            if value != "0" {
+                if let currentValue = Double(value) {
+                    value = formatResult(-currentValue)
+                    operationString = "-\(formatResult(currentValue))"
+                    historyViewModel.addData(operation: operationString, result: value)
+                }
             }
+            
         case .clear:
             resetAll()
+            
         case .sin, .cos, .tg, .ctg, .sqrt:
             number = Double(value) ?? 0
             currentOperation = operationForButton(item)
             let result = performOperation(number)
+            // Формируем строку операции без результата
+            operationString = "\(item.rawValue)(\(formatResult(number)))"
             value = result
+            // Записываем в историю
+            historyViewModel.addData(operation: operationString, result: result)
             resetOperation()
             isResultDisplayed = true
-        default:
+            
+        default: // Цифры
             if value == "0" || isResultDisplayed {
                 value = item.rawValue
                 isResultDisplayed = false
@@ -74,6 +101,7 @@ class ViewModel: ObservableObject {
             }
         }
     }
+    
     
     func operationForButton(_ item: Buttons) -> Operation {
         switch item {
